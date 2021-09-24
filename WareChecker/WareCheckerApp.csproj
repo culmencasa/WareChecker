@@ -82,6 +82,7 @@
     <Compile Include="Default\DownloadProgressForm.Designer.cs">
       <DependentUpon>DownloadProgressForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Utils\FormManager.cs" />
     <Compile Include="Utils\JSONParser.cs" />
     <Compile Include="Utils\JSONWriter.cs" />
     <Compile Include="Default\MainForm.cs">
@@ -130,16 +131,6 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="rabbit.ico" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\FormEx\Utils.UI\Utils.UI.csproj">
-      <Project>{44265a13-8cb4-4eab-95e4-e636a7566499}</Project>
-      <Name>Utils.UI</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\..\FormEx\Utils\Utils.csproj">
-      <Project>{b6a7d2d0-adae-4ec4-b3b6-5fa90993f140}</Project>
-      <Name>Utils</Name>
-    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <COMReference Include="IWshRuntimeLibrary">
