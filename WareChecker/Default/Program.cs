@@ -20,7 +20,8 @@ namespace WareCheckerApp
         static EZLogger logger;
         static Program()
         { 
-            logger = new EZLogger("warechecker.log", false, (uint)EZLogger.Level.Error);
+            //string logFile = AppDomain.CurrentDomain.BaseDirectory
+            logger = new EZLogger( "warechecker.log", false, (uint)EZLogger.Level.Error);
             logger.Start();
         }
 

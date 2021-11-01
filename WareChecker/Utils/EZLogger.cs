@@ -152,15 +152,15 @@ namespace WareCheckerApp
                     }
                 }
 
-                // 如果目录不存在，增加目录
-                string directoryPath = Path.GetDirectoryName(_logFilename);
-                if (!Directory.Exists(directoryPath))
-                {
-                    Directory.CreateDirectory(directoryPath);
-                }
+				// 如果目录不存在，增加目录
+				string directoryPath = Path.GetDirectoryName(_logFilename);
+				if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
+				{
+					Directory.CreateDirectory(directoryPath);
+				}
 
-                // Return successfully
-                _state = EZLogger.State.Running;
+				// Return successfully
+				_state = EZLogger.State.Running;
                 return true;
             }
         }

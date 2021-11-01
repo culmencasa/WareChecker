@@ -33,8 +33,6 @@ namespace TestApp
             checkerProcess = Process.Start(psi);
 
 
-
-
             Application.Run(new Form1());
         }
         private static void Application_ApplicationExit(object sender, EventArgs e)
