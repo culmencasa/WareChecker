@@ -1,8 +1,10 @@
-﻿using System;
+﻿using NamedPipeWrapper;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.IO.MemoryMappedFiles;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -17,88 +19,17 @@ namespace WareCheckerApp
     /// </summary>
     public class LogicContext : ApplicationContext
     {
-        #region 字段
-
-        private ProgramPreference _preferences;
+		#region 常量
 
         private const string PreferenceFilePath = "preference.json";
 
+		#endregion
 
+		#region 字段
+
+		private ProgramPreference _preferences;
         private BackgroundWorker _updateBackgroundWorker;
-
-        protected BackgroundWorker UpdateBackgroundWorker
-        {
-            get
-            {
-                if (_updateBackgroundWorker == null)
-                {
-                    _updateBackgroundWorker = new BackgroundWorker();
-                    _updateBackgroundWorker.WorkerReportsProgress = true;
-                    _updateBackgroundWorker.WorkerSupportsCancellation = true;
-                    _updateBackgroundWorker.ProgressChanged += _updateBackgroundWorker_ProgressChanged;
-                    _updateBackgroundWorker.DoWork += _updateBackgroundWorker_DoWork;
-                    _updateBackgroundWorker.RunWorkerCompleted += _updateBackgroundWorker_RunWorkerCompleted;
-                }
-
-                return _updateBackgroundWorker;
-            }
-        }
-
-        private void _updateBackgroundWorker_DoWork(object sender, DoWorkEventArgs e)
-        {
-            BackgroundWorker bgw = sender as BackgroundWorker;
-
-            bool feedBack = false;
-            if (e.Argument != null)
-            {
-                feedBack = (bool)e.Argument;
-            }
-
-            try
-            {
-                WareChecker wareChecker = new WareChecker(Preferences);
-                wareChecker.ExceptionCatch += WareChecker_ExceptionCatch;
-                wareChecker.ProgressUIRequired += WareChecker_ProgressInterfaceRequired;
-                wareChecker.DialogUIRequired += WareChecker_DialogInterfaceRequired;
-                wareChecker.BindUIContext(this.MainForm);
-
-                if (feedBack)
-                {
-                    wareChecker.FeedBack = true;
-                }
-
-                wareChecker.Start();
-
-            }
-            catch
-            {
-                throw;
-            }
-        }
-        private void _updateBackgroundWorker_ProgressChanged(object sender, ProgressChangedEventArgs e)
-        {
-            switch(e.ProgressPercentage)
-            {
-                case 200:
-                    //WareChecker.CheckResults result = (WareChecker.CheckResults)e.UserState;
-                    //if (result == WareChecker.CheckResults.NoUpdate)
-                    //{
-                    //    MessageBox.Show("没有更新");
-                    //}
-                    //else if (result == WareChecker.CheckResults.CanUpdate)
-                    //{ 
-                        
-                    //}
-                    break;            
-            }
-
-        }
-        private void _updateBackgroundWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
-        {
-
-        }
-
-
+        private NamedPipeClient<string> _npClient = new NamedPipeClient<string>("BarcodePrint-WareChecker");
 
         public readonly string ContextName = "升级服务";
 
@@ -107,7 +38,7 @@ namespace WareCheckerApp
         #region 属性
 
         /// <summary>
-        /// 程序选项。
+        /// WareChecker程序选项
         /// 在LoadProgramPreferences或者SetupProgramFileConfig方法中实例化。
         /// </summary>
         public ProgramPreference Preferences
@@ -127,17 +58,42 @@ namespace WareCheckerApp
             }
         }
 
+        /// <summary>
+        /// 用于后台调用WareChecker
+        /// </summary>
+        protected BackgroundWorker UpdateBackgroundWorker
+        {
+            get
+            {
+                if (_updateBackgroundWorker == null)
+                {
+                    _updateBackgroundWorker = new BackgroundWorker();
+                    _updateBackgroundWorker.WorkerReportsProgress = true;
+                    _updateBackgroundWorker.WorkerSupportsCancellation = true;
+                    _updateBackgroundWorker.ProgressChanged += _updateBackgroundWorker_ProgressChanged;
+                    _updateBackgroundWorker.DoWork += _updateBackgroundWorker_DoWork;
+                    _updateBackgroundWorker.RunWorkerCompleted += _updateBackgroundWorker_RunWorkerCompleted;
+                }
+
+                return _updateBackgroundWorker;
+            }
+        }
+
         #endregion
 
         #region 构造
 
-        public LogicContext(Form mainForm)
+        public LogicContext()
         {
-            MainForm = mainForm;
+            _npClient.ServerMessage += OnServerMessage;
+            _npClient.Disconnected += OnDisconnected;
+            _npClient.Start();
+            MainForm = FormManager.Single<MainForm>();
 
             // 主程序不显示
             MainForm.WindowState = FormWindowState.Minimized;
-            MainForm.Closed += (a, b) => Application.Exit();
+            MainForm.Closed -= OnMainFormClosed;
+            MainForm.Closed += OnMainFormClosed;
 
             MainForm.Show();
         }
@@ -269,9 +225,16 @@ namespace WareCheckerApp
 
         #endregion
 
-
         #region 事件处理
-
+                
+        private new void OnMainFormClosed(object sender, EventArgs e)
+        {
+            _npClient.PushMessage("QUITSYNC");
+            
+            
+            //_npClient.Stop();
+            Application.Exit();
+        }
 
         private void WareChecker_ExceptionCatch(string obj)
         {
@@ -290,6 +253,88 @@ namespace WareCheckerApp
             IDownloadProgressView form = new DownloadProcessForm();
             return form;
         }
+
+
+		#region BackgroundWorker
+
+        private void _updateBackgroundWorker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            BackgroundWorker bgw = sender as BackgroundWorker;
+
+            bool feedBack = false;
+            if (e.Argument != null)
+            {
+                feedBack = (bool)e.Argument;
+            }
+
+            try
+            {
+                WareChecker wareChecker = new WareChecker(Preferences);
+                wareChecker.ExceptionCatch += WareChecker_ExceptionCatch;
+                wareChecker.ProgressUIRequired += WareChecker_ProgressInterfaceRequired;
+                wareChecker.DialogUIRequired += WareChecker_DialogInterfaceRequired;
+                wareChecker.BindUIContext(this.MainForm);
+
+                if (feedBack)
+                {
+                    wareChecker.FeedBack = true;
+                }
+
+                wareChecker.Start();
+
+            }
+            catch
+            {
+                throw;
+            }
+        }
+        private void _updateBackgroundWorker_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            switch(e.ProgressPercentage)
+            {
+                case 200:
+                    //WareChecker.CheckResults result = (WareChecker.CheckResults)e.UserState;
+                    //if (result == WareChecker.CheckResults.NoUpdate)
+                    //{
+                    //    MessageBox.Show("没有更新");
+                    //}
+                    //else if (result == WareChecker.CheckResults.CanUpdate)
+                    //{ 
+                        
+                    //}
+                    break;            
+            }
+
+        }
+        private void _updateBackgroundWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+
+        }
+
+
+
+
+
+        #endregion
+
+        #region NamedPipeEvents
+
+        private static void OnServerMessage(NamedPipeConnection<string, string> connection, string message)
+        {
+            if (message == "QUITSYNC2")
+            {
+                //todo: 如果正在更新, 给出提示
+
+                Application.Exit();
+            }
+        }
+        private static void OnDisconnected(NamedPipeConnection<string, string> connection)
+        {
+        }
+
+
+        #endregion
+
         #endregion
 
     }

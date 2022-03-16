@@ -51,11 +51,9 @@ namespace WareCheckerApp
 
         #endregion
 
-        // todo: 用户强制关闭窗口的处理
 
         private void DownloadProcessForm_Load(object sender, EventArgs e)
         {
-            Start();
         }
 
         private void Start()
@@ -67,5 +65,19 @@ namespace WareCheckerApp
             Executer.BeginDownloading();
         }
 
+        public new void Show()
+        {
+            base.Show();
+
+            this.TopMost = true;
+
+            Start();
+        }
+
+		private void DownloadProcessForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            // todo: 用户强制关闭窗口的处理
+
+        }
     }
 }

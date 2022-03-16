@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -34,6 +35,11 @@ namespace WareCheckerApp
 
         private void tlsCheckUpdate_Click(object sender, EventArgs e)
         {
+
+            if (Helper.GetConfig("debug")?.ToLower() == "true")
+            {
+                Debugger.Launch();
+            }
             //todo: 检查并提示结果
             Program.Context.TakeATrip(true);
         }

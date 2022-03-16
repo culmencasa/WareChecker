@@ -21,9 +21,30 @@ namespace WareCheckerApp
         static Program()
         { 
             //string logFile = AppDomain.CurrentDomain.BaseDirectory
-            logger = new EZLogger( "warechecker.log", false, (uint)EZLogger.Level.Error);
+            logger = new EZLogger("warechecker.log", false, (uint)EZLogger.Level.Error);
             logger.Start();
         }
+
+
+        public static void InitializeLogicContext()
+        {
+            if (Context == null)
+            {
+                Context = new LogicContext();
+            }
+            // 1. 加载更新程序配置
+            Context.LoadProgramPreferences();
+
+            // 2. 检查配置
+            if (Context.CheckPreferencesErrors())
+            {
+                MessageBox.Show("程序未正确配置. ", Context.ContextName, MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+
+                var prefForm = FormManager.Single<PreferencesForm>();
+                prefForm.ShowDialog();
+            }
+        }
+
 
         [STAThread]
         public static void Main(string[] args)
@@ -34,33 +55,46 @@ namespace WareCheckerApp
             _ = new Mutex(false, APP_NAME, out isFirstSyncElement);
             if (isFirstSyncElement == false)
             {
-                Process SameAppProc = GetProcInstance();
-                if (SameAppProc != null)
+                Process sameAppProc = GetProcessInstance();
+                if (sameAppProc != null)
                 {
                     // 如果找到已有的实例则前置
                     //Win32.SetForegroundWindow(SameAppProc.MainWindowHandle);
                 }
-
-                Environment.Exit(0);
+                else
+                {
+                    Environment.Exit(0);
+                }
                 return;
             }
 
             #endregion
+
+            #region 初始化
 
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += Application_ThreadException;
             AppDomain.CurrentDomain.UnhandledException += (sender, e) => {
 
                 Exception ex = (Exception)e.ExceptionObject;
-                string msg = ex.Message;
-                MessageBox.Show("非线程：存在未处理的异常:"  + msg);  
-                logger.Error(ex.StackTrace);           
+                logger.Error(ex.StackTrace);
+                
+                MessageBox.Show("非线程：存在未处理的异常:"  + ex.Message);  
             };
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            Context = new LogicContext(new MainForm());
+            #endregion
+
+            #region 更新逻辑
+
+            Context = new LogicContext();
+
+            if (Helper.GetConfig("debug")?.ToLower() == "true")
+            {
+                Debugger.Launch();
+            }
             // 1. 加载更新程序配置
             if (args.Length > 0)
             {
@@ -84,13 +118,14 @@ namespace WareCheckerApp
                 Context.TakeATrip();
             }
 
+            #endregion
+
 
             Application.Run(Context);
         }
 
         private static void Application_ThreadException(object sender, System.Threading.ThreadExceptionEventArgs e)
         {
-
             logger.Error(e.Exception.StackTrace);
             MessageBox.Show(e.Exception.Message);
         }
@@ -104,7 +139,7 @@ namespace WareCheckerApp
             private set;
         }
 
-        public static Process GetProcInstance()
+        public static Process GetProcessInstance()
         {
             Process current = Process.GetCurrentProcess();
             Process[] processes = Process.GetProcessesByName(current.ProcessName);

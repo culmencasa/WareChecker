@@ -50,23 +50,20 @@ namespace WareCheckerApp
 
         #region 属性
 
-        /// <summary>
-        /// 表示远程服务器上的更新配置
-        /// </summary>
-        public IUpdateInfo RemoteConfig { get; private set; }
-
         public IPreference ProgramConfig { get; set; }
 
         public CheckResults UpdateCheckResult { get; set; } = CheckResults.Unchecked;
 
+        public string ZipFilePath { get; set; }
+
+
 
         #endregion
 
-        #region 事件
+        #region 事件和委托
 
         public event Action<string> ExceptionCatch;
-        public event EventHandler<DownloadProgressChangedEventArgs> DownloadProgressChanged;
-        public event EventHandler DownloadCompleted;
+
         /// <summary>
         /// 进度界面
         /// </summary>
@@ -76,6 +73,28 @@ namespace WareCheckerApp
         /// </summary>
         public event Func<ICheck, IDownloadConfirmView> DialogUIRequired;
 
+
+
+        #endregion
+
+        #region 事件处理
+
+        private void PassOnDownloadProgressStates(DownloadProgressChangedEventArgs e)
+        {
+            if (DownloadProgressChanged != null)
+            {
+                DownloadProgressChanged(this, e);
+            }
+        }
+
+        private void PassOnDownloadCompleted(AsyncCompletedEventArgs e)
+        {
+            if (DownloadCompleted != null)
+            {
+                DownloadCompleted(this, e);
+            }
+        }
+
         #endregion
 
         #region 公开方法
@@ -84,7 +103,7 @@ namespace WareCheckerApp
         /// 初始化
         /// </summary>
         /// <param name="url">配置文件URL地址</param>
-        public  void Initialize(string url)
+        public void Initialize(string url)
         {
             string content = string.Empty;
             try
@@ -103,8 +122,15 @@ namespace WareCheckerApp
             {
                 OnExceptionCatches(ex.Message);
             }
-
         }
+
+
+        #region ICheck成员
+
+        /// <summary>
+        /// 表示远程服务器上的更新配置
+        /// </summary>
+        public IUpdateInfo RemoteConfig { get; private set; }
 
         /// <summary>
         /// 检查是否需要继续更新
@@ -150,6 +176,51 @@ namespace WareCheckerApp
             return result;
         }
 
+        #endregion
+
+
+        #region IDownload成员
+
+        public event EventHandler<DownloadProgressChangedEventArgs> DownloadProgressChanged;
+        public event EventHandler DownloadCompleted;
+
+        public void BeginDownloading()
+        {
+            try
+            {
+                var client = new WebClient();
+                {
+                    client.DownloadProgressChanged += (a, b) => PassOnDownloadProgressStates(b);
+                    client.DownloadFileCompleted += (c, d) => PassOnDownloadCompleted(d);
+
+                    string tempDirName = "Distributions";
+                    if (!Directory.Exists(tempDirName))
+                    {
+                        Directory.CreateDirectory(tempDirName);
+                    }
+
+                    string packageFileExt = RemoteConfig.PackageFileName.Substring(RemoteConfig.PackageFileName.IndexOf(".") + 1);
+                    string targetLocalFileName = Path.Combine(tempDirName, $"update_{RemoteConfig.Version}.{packageFileExt}");
+                    if (File.Exists(targetLocalFileName))
+                    {
+                        File.Delete(targetLocalFileName);
+                    }
+
+                    client.DownloadFileAsync(new Uri(RemoteConfig.PackageUrl), targetLocalFileName);
+
+                    ZipFilePath = targetLocalFileName;
+
+                    //while (client.IsBusy) { }
+                }
+            }
+            catch (WebException ex)
+            {
+                throw ex;
+            }
+        }
+
+        #endregion
+
 
         public bool FeedBack { get; set; }
 
@@ -182,21 +253,26 @@ namespace WareCheckerApp
                         {
                             if (FeedBack)
                             {
-                                MessageBox.Show("程序将退出");                                
+                                if (IsUpdatingProgramRunning())
+                                {
+                                    MessageBox.Show("程序正在运行中, 点击确定按钮将强制关闭以完成更新。");
+                                }
                             }
                         }
 
-                        // 0. 判断程序是否正在运行, 提示关闭
+                        // 判断程序是否正在运行, 提示关闭
                         CloseApplication();
 
                         // 如果需要显示进度条
                         if (ProgressUIRequired != null)
                         {
+                            DownloadCompleted -= OnDownloadCompleted;
                             DownloadCompleted += OnDownloadCompleted;
                             ShowDownloadProgressUI();
                         }
                         else
                         {
+                            DownloadCompleted -= OnDownloadCompleted;
                             DownloadCompleted += OnDownloadCompleted;
                             BeginDownloading();
                         }
@@ -205,8 +281,6 @@ namespace WareCheckerApp
                 case CheckResults.AlreadyNew:
                 case CheckResults.NoUpdate:
                     {
-                        //todo:弹出提示
-
                         if (FeedBack)
                         {
                             MessageBox.Show("已经是最新版本.");
@@ -224,6 +298,7 @@ namespace WareCheckerApp
 
             if (FeedBack)
             {
+                //todo: 做一个更新完成的界面
                 MessageBox.Show("更新完成");
             }
 
@@ -233,9 +308,6 @@ namespace WareCheckerApp
         }
 
         #endregion
-
-
-
 
         #region 私有方法
 
@@ -250,10 +322,12 @@ namespace WareCheckerApp
                 return;
             }
 
-            IDownloadProgressView view = ProgressUIRequired.Invoke(this);
-            view.Executer = this;
-            view.Show();
-
+            IDownloadProgressView view = ProgressUIRequired?.Invoke(this);
+            if (view != null)
+            {
+                view.Executer = this;
+                view.Show();
+            }
         }
 
 
@@ -284,60 +358,6 @@ namespace WareCheckerApp
 
             return userAnswer;
         }
-
-
-        public string ZipFilePath { get; set; }
-
-        public void BeginDownloading()
-        {
-            try
-            {
-                var client = new WebClient();
-                {
-                    client.DownloadProgressChanged += (a, b) => PassOnDownloadProgressStates(b);
-                    client.DownloadFileCompleted += (c, d) => PassOnDownloadCompleted(d);
-
-                    string tempDirName = "Distributions";
-                    if (!Directory.Exists(tempDirName))
-                    {
-                        Directory.CreateDirectory(tempDirName);
-                    }
-                    string targetPath = Path.Combine(tempDirName, RemoteConfig.PackageFileName);
-                    if (File.Exists(targetPath))
-                    {
-                        File.Delete(targetPath);
-                    }
-
-                    client.DownloadFileAsync(new Uri(RemoteConfig.PackageUrl), targetPath);
-
-                    ZipFilePath = targetPath;
-
-                    //while (client.IsBusy) { }
-                }
-            }
-            catch (WebException ex)
-            {
-                throw ex;
-            }
-        }
-
-        private void PassOnDownloadProgressStates(DownloadProgressChangedEventArgs e)
-        {
-            if (DownloadProgressChanged != null)
-            {
-                DownloadProgressChanged(this, e);
-            }
-        }
-
-        private void PassOnDownloadCompleted(AsyncCompletedEventArgs e)
-        {
-            if (DownloadCompleted != null)
-            {
-                DownloadCompleted(this, e);
-            }
-        }
-
-
 
 
         protected void OnExceptionCatches(string message)
@@ -388,28 +408,12 @@ namespace WareCheckerApp
                 {
                     if (proc != null && proc.HasExited == false)
                     {
-                        proc.CloseMainWindow();
-                        proc.WaitForExit();
+                        //proc.CloseMainWindow();
+                        //proc.WaitForExit();
+                        proc.Kill();
                     }
                 }
             }
-        }
-
-        public static void CreateShortcut(string shortcutName, string shortcutPath, string targetFileLocation)
-        {
-            string shortcutLocation = Path.Combine(shortcutPath, shortcutName + ".lnk");
-            if (System.IO.File.Exists(shortcutLocation))
-            {
-                System.IO.File.Delete(shortcutLocation);
-            }
-
-            WshShell shell = new WshShell();
-            IWshShortcut shortcut = shell.CreateShortcut(shortcutLocation) as IWshShortcut;
-
-            shortcut.Description = "";   // The description of the shortcut
-            shortcut.IconLocation = targetFileLocation;           // The icon of the shortcut
-            shortcut.TargetPath = targetFileLocation;                 // The path of the file that will launch when the shortcut is run
-            shortcut.Save();                                    // Save the shortcut
         }
 
         private void RestartProcess()
@@ -460,6 +464,39 @@ namespace WareCheckerApp
         }
 
 
+        public bool IsUpdatingProgramRunning()
+        {
+            Process[] processes = Process.GetProcessesByName(ProgramConfig.ProgramName);
+            if (processes != null && processes.Length > 0)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+
         #endregion
+
+
+        public void CreateShortcut(string shortcutName, string shortcutPath, string targetFileLocation)
+        {
+            string shortcutLocation = Path.Combine(shortcutPath, shortcutName + ".lnk");
+            if (System.IO.File.Exists(shortcutLocation))
+            {
+                System.IO.File.Delete(shortcutLocation);
+            }
+
+            WshShell shell = new WshShell();
+            IWshShortcut shortcut = shell.CreateShortcut(shortcutLocation) as IWshShortcut;
+
+            shortcut.Description = "";
+            shortcut.IconLocation = targetFileLocation;
+            shortcut.TargetPath = targetFileLocation;
+            shortcut.Save();
+        }
+
     }
 }
